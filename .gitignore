@@ -3,6 +3,13 @@
 debug
 target
 **/target*/
+node_modules/
+dist/
+artifacts/
+
+# Target-specific uv sidecars are prepared locally or by CI.
+src-tauri/binaries/uv-*
+src-tauri/gen/
 
 todo_*.md
 
