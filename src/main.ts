@@ -52,6 +52,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <p id="eyebrow" class="eyebrow"></p>
         <h1 id="loading-title"></h1>
         <p id="phase-message" class="phase-message"></p>
+        <div id="install-progress" class="install-progress" role="progressbar" aria-valuemin="0" aria-valuemax="5">
+          <span class="progress-spinner" aria-hidden="true"></span>
+          <span class="progress-track" aria-hidden="true"><span id="progress-fill"></span></span>
+        </div>
         <p id="first-run" class="first-run"></p>
         <button id="retry-button" class="primary hidden" type="button"></button>
       </section>
@@ -94,6 +98,8 @@ const elements = {
   eyebrow: document.querySelector<HTMLElement>("#eyebrow")!,
   loadingTitle: document.querySelector<HTMLElement>("#loading-title")!,
   phase: document.querySelector<HTMLElement>("#phase-message")!,
+  progress: document.querySelector<HTMLElement>("#install-progress")!,
+  progressFill: document.querySelector<HTMLElement>("#progress-fill")!,
   firstRun: document.querySelector<HTMLElement>("#first-run")!,
   retry: document.querySelector<HTMLButtonElement>("#retry-button")!,
   frame: document.querySelector<HTMLIFrameElement>("#marimo")!,
@@ -117,6 +123,15 @@ const elements = {
 
 let bootstrap: Bootstrap;
 let pollTimer: number | undefined;
+
+const phaseSteps: Record<string, number> = {
+  preparing: 0,
+  python: 1,
+  venv: 2,
+  marimo: 3,
+  server: 4,
+  ready: 5,
+};
 
 function tr(key: string): string {
   return bootstrap?.translations[key] ?? key;
@@ -169,9 +184,18 @@ function toggleCustomMirror() {
 }
 
 function renderStatus(info: RuntimeInfo) {
+  const phaseMessage = tr(`phase_${info.phase}`);
+  const message = info.phase === "error" && info.detail ? info.detail : phaseMessage;
+  const step = phaseSteps[info.phase] ?? 0;
+  const busy = info.phase !== "error" && info.phase !== "stopped";
   elements.status.dataset.phase = info.phase;
   elements.statusText.textContent = tr(`phase_${info.phase}`);
-  elements.phase.textContent = info.detail || tr(`phase_${info.phase}`);
+  elements.phase.textContent = message;
+  elements.loading.setAttribute("aria-busy", String(busy));
+  elements.progress.classList.toggle("hidden", !busy);
+  elements.progress.setAttribute("aria-valuenow", String(step));
+  elements.progress.setAttribute("aria-valuetext", message);
+  elements.progressFill.style.width = `${Math.max(8, step * 20)}%`;
   if (info.phase === "error") {
     elements.loadingTitle.textContent = tr("phase_error");
     elements.retry.classList.remove("hidden");
@@ -199,6 +223,8 @@ async function start() {
     elements.frame.addEventListener(
       "load",
       () => {
+        elements.loading.setAttribute("aria-busy", "false");
+        elements.progress.classList.add("hidden");
         elements.loading.classList.add("hidden");
         elements.frame.classList.remove("hidden");
       },
@@ -249,6 +275,8 @@ async function initialize() {
     await start();
   } catch (error) {
     elements.loading.classList.add("error");
+    elements.loading.setAttribute("aria-busy", "false");
+    elements.progress.classList.add("hidden");
     elements.phase.textContent = String(error);
     elements.retry.classList.remove("hidden");
   }

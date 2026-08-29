@@ -67,6 +67,53 @@ button { cursor: pointer; }
 .eyebrow { margin: 0 0 9px; color: #6c7b72; font-size: 12px; font-weight: 620; letter-spacing: .045em; text-transform: uppercase; }
 .loading-card h1 { max-width: 600px; margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(30px, 4vw, 46px); font-weight: 500; line-height: 1.08; letter-spacing: -.035em; }
 .phase-message { max-width: 680px; margin: 17px 0 0; color: #3f5147; font-size: 14px; overflow-wrap: anywhere; }
+.install-progress {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: min(420px, calc(100% - 32px));
+  margin-top: 18px;
+}
+.progress-spinner {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(55, 91, 69, .18);
+  border-top-color: #477a58;
+  border-right-color: #8ebd6c;
+  border-radius: 50%;
+  animation: spin .82s linear infinite;
+}
+.progress-track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(70, 98, 80, .12);
+  box-shadow: inset 0 1px 2px rgba(25, 54, 36, .08);
+}
+#progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 8%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #315b40, #72a65c);
+  box-shadow: 0 0 14px rgba(91, 153, 83, .3);
+  transition: width .45s ease;
+}
+#progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 48%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .62), transparent);
+  transform: translateX(-110%);
+  animation: progress-sweep 1.15s ease-in-out infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes progress-sweep { to { transform: translateX(260%); } }
 .first-run { max-width: 490px; margin: 8px 0 0; color: #89958e; font-size: 12px; line-height: 1.5; }
 .loading-card.error .orb { background: #6f3633; }
 .loading-card.error .orb::before, .loading-card.error .orb::after, .loading-card.error .orb span { animation: none; background: #ffb1aa; }
@@ -100,10 +147,17 @@ select:focus, input:focus { border-color: #6f9a7b; box-shadow: 0 0 0 3px rgba(76
   .status-pill, .icon-button:hover { background: #202b25; color: #b8c4bc; }
   .eyebrow, .phase-message { color: #aebbb2; }
   .first-run { color: #738078; }
+  .progress-spinner { border-color: rgba(174, 210, 186, .18); border-top-color: #80b58d; border-right-color: #b7df91; }
+  .progress-track { background: rgba(190, 220, 199, .12); }
   dialog { color: #e8eee9; background: #18211c; border-color: #344239; }
   .close-button:hover, .secondary:hover { background: #263229; }
   label { color: #bec9c1; }
   select, input { color: #e8eee9; background: #101713; border-color: #3a493f; }
   .config-location code { color: #abb7ae; background: #101713; }
   .secondary { color: #c3cdc6; border-color: #3b4940; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb::before, .orb::after, .orb span, .progress-spinner, #progress-fill::after { animation: none; }
+  #progress-fill { transition: none; }
 }
