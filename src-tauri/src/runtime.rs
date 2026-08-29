@@ -180,10 +180,7 @@ impl SharedRuntime {
         }
 
         let notebook = paths.notebooks.join("home.py");
-        if !notebook.exists() {
-            fs::write(&notebook, DEFAULT_NOTEBOOK)
-                .map_err(|error| AppError::io(&notebook, error))?;
-        }
+        ensure_starter_notebook(&notebook)?;
 
         let port = select_port(config.marimo_port)?;
         let url = format!("http://127.0.0.1:{port}");
@@ -193,7 +190,9 @@ impl SharedRuntime {
         let stderr = stdout
             .try_clone()
             .map_err(|error| AppError::io(&log_path, error))?;
-        let mut child = Command::new(&python)
+        let mut marimo_command = Command::new(&python);
+        hide_console_window(&mut marimo_command);
+        let mut child = marimo_command
             .args([
                 OsStr::new("-m"),
                 OsStr::new("marimo"),
@@ -326,7 +325,9 @@ fn run_uv_os(
     environment: &[(OsString, OsString)],
     action: &str,
 ) -> AppResult<()> {
-    let output = Command::new(uv)
+    let mut command = Command::new(uv);
+    hide_console_window(&mut command);
+    let output = command
         .args(args)
         .current_dir(&paths.root)
         .envs(environment.iter().cloned())
@@ -345,7 +346,9 @@ fn run_uv_os(
 }
 
 fn python_has_marimo(python: &Path) -> bool {
-    Command::new(python)
+    let mut command = Command::new(python);
+    hide_console_window(&mut command);
+    command
         .args(["-c", "import marimo"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -353,6 +356,19 @@ fn python_has_marimo(python: &Path) -> bool {
         .status()
         .is_ok_and(|status| status.success())
 }
+
+#[cfg(windows)]
+fn hide_console_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    // Prevent console-subsystem children (uv and Python) from allocating a
+    // visible console when bibimapy is launched as a Windows GUI application.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_console_window(_command: &mut Command) {}
 
 fn read_environment_stamp(paths: &AppPaths) -> Option<EnvironmentStamp> {
     fs::read_to_string(&paths.environment)
@@ -364,6 +380,44 @@ fn write_environment_stamp(paths: &AppPaths, stamp: &EnvironmentStamp) -> AppRes
     let source = toml::to_string_pretty(stamp)
         .map_err(|error| AppError::InvalidConfig(error.to_string()))?;
     fs::write(&paths.environment, source).map_err(|error| AppError::io(&paths.environment, error))
+}
+
+fn ensure_starter_notebook(path: &Path) -> AppResult<()> {
+    if !path.exists() {
+        return fs::write(path, DEFAULT_NOTEBOOK).map_err(|error| AppError::io(path, error));
+    }
+
+    let source = fs::read_to_string(path).map_err(|error| AppError::io(path, error))?;
+    if let Some(migrated) = migrate_starter_notebook(&source) {
+        fs::write(path, migrated).map_err(|error| AppError::io(path, error))?;
+    }
+    Ok(())
+}
+
+fn migrate_starter_notebook(source: &str) -> Option<String> {
+    // Keep user notebooks untouched. These markers identify the bibimapy
+    // starter even when the user has appended their own cells.
+    if !source.contains("BIBIMAPY_LOCALE")
+        || !source.contains("~/.bibimapy/notebooks")
+        || !source.contains("Python 3.12")
+    {
+        return None;
+    }
+
+    for line_ending in ["\r\n", "\n"] {
+        for signature in ["def _(mo, os):", "def _(mo):"] {
+            let broken = format!(
+                "{signature}{line_ending}    locale = os.getenv(\"BIBIMAPY_LOCALE\", \"en\")"
+            );
+            if source.contains(&broken) {
+                let fixed = format!(
+                    "def _(mo):{line_ending}    import os{line_ending}{line_ending}    locale = os.getenv(\"BIBIMAPY_LOCALE\", \"en\")"
+                );
+                return Some(source.replacen(&broken, &fixed, 1));
+            }
+        }
+    }
+    None
 }
 
 fn select_port(preferred: u16) -> AppResult<u16> {
@@ -383,4 +437,34 @@ fn tail_log(path: &Path) -> String {
     let mut lines: Vec<_> = source.lines().rev().take(12).collect();
     lines.reverse();
     lines.join(" | ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::migrate_starter_notebook;
+
+    const STARTER_TAIL: &str = r#"
+    copy = {"en": ("Welcome", "Python 3.12 is managed locally")}
+    mo.md("`~/.bibimapy/notebooks`")
+"#;
+
+    #[test]
+    fn migrates_undefined_marimo_cell_dependency() {
+        let source = format!(
+            "@app.cell\ndef _(mo, os):\n    locale = os.getenv(\"BIBIMAPY_LOCALE\", \"en\")\n{STARTER_TAIL}"
+        );
+
+        let migrated = migrate_starter_notebook(&source).expect("starter should be migrated");
+
+        assert!(migrated.contains("def _(mo):\n    import os\n\n    locale = os.getenv"));
+        assert!(!migrated.contains("def _(mo, os):"));
+    }
+
+    #[test]
+    fn preserves_unrelated_notebooks() {
+        let source =
+            "@app.cell\ndef _(mo, os):\n    locale = os.getenv(\"BIBIMAPY_LOCALE\", \"en\")";
+
+        assert_eq!(migrate_starter_notebook(source), None);
+    }
 }

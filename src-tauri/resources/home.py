@@ -1,5 +1,3 @@
-import os
-
 import marimo
 
 __generated_with = "bibimapy"
@@ -15,6 +13,8 @@ def _():
 
 @app.cell
 def _(mo):
+    import os
+
     locale = os.getenv("BIBIMAPY_LOCALE", "en")
     copy = {
         "en": ("Welcome to bibimapy", "Python 3.12 and marimo are managed locally by uv."),
